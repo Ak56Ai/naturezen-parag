@@ -53,7 +53,7 @@ Deno.serve(async (req) => {
         razorpay_order_id: razorpay_order_id,
         razorpay_signature: razorpay_signature
       })
-      .eq('id', order_id)
+      .eq('razorpay_order_id', razorpay_order_id)
 
     if (error) {
       console.error('Database update error:', error)

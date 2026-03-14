@@ -20,7 +20,7 @@ const OrderSuccessPage = () => {
     try {
       const { data, error } = await supabase
         .from('orders')
-        .select('*')
+        .select('*, order_items(*)')
         .eq('id', orderId)
         .single();
 
