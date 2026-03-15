@@ -103,78 +103,52 @@ const CheckoutPage = () => {
   const createOrder = async () => {
     if (!validateForm()) return null;
 
-    console.log('Creating order with cart:', cart);
-    console.log('User:', user);
-    console.log('Shipping details:', shippingDetails);
-
     if (!user?.id) {
       toast.error('User not authenticated');
       navigate('/login');
       return null;
     }
+
     const orderData = {
       user_id: user.id,
-      total_amount: getTotalPrice() * 1.18, // Including tax
+      total_amount: getTotalPrice() * 1.18,
       status: 'PENDING',
       payment_method: paymentMethod,
-      order_items: cart.map(item => ({
+      shipping_address: shippingDetails
+    };
+
+    try {
+
+      const { data, error } = await supabase
+        .from('orders')
+        .insert([orderData])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      console.log("Order created:", data);
+
+      const orderItems = cart.map(item => ({
+        order_id: data.id,
         product_id: item.product.id,
         product_name: item.product.name,
         quantity: item.quantity,
         price: item.product.price,
-      })),
-      shipping_address: shippingDetails,
-    };
+        total_price: item.product.price * item.quantity
+      }));
 
-    console.log('Creating order with data:', orderData);
+      const { error: itemsError } = await supabase
+        .from('order_items')
+        .insert(orderItems);
 
-    try {
-    const { data, error } = await supabase
-      .from('orders')
-      .insert([orderData])
-      .select()
-      .single();
+      if (itemsError) console.error(itemsError);
 
-    if (error) {
-      console.error('Error creating order:', error);
-      toast.error('Failed to create order');
-      return null;
-    }
+      return data;
 
-    console.log('Order created successfully:', data);
-
-    // Also create order items for better tracking
-    const orderItemsData = cart.map(item => ({
-      order_id: data.id,
-      product_id: item.product.id,
-      product_name: item.product.name,
-      quantity: item.quantity,
-      price: item.product.price,
-      total_price: item.product.price * item.quantity,
-    }));
-
-    const { error: itemsError } = await supabase
-      .from('order_items')
-      .insert(orderItemsData);
-
-    if (itemsError) {
-      console.error('Error creating order items:', itemsError);
-    }
-
-    // Log payment attempt
-    await supabase
-      .from('payment_logs')
-      .insert([{
-        order_id: data.id,
-        payment_method: paymentMethod,
-        payment_status: 'INITIATED',
-        amount: data.total_amount,
-      }]);
-
-    return data;
     } catch (error) {
-      console.error('Database error:', error);
-      toast.error('Failed to create order. Please try again.');
+      console.error(error);
+      toast.error('Failed to create order');
       return null;
     }
   };
@@ -202,6 +176,13 @@ const CheckoutPage = () => {
         Math.round(order.total_amount * 100), // Convert to paise
         order.id
       );
+
+      await supabase
+        .from('orders')
+        .update({
+          razorpay_order_id: razorpayOrder.id
+        })
+        .eq('id', order.id);
 
       console.log('Razorpay order created:', razorpayOrder);
 
