@@ -68,7 +68,13 @@ export const createRazorpayOrder = async (amount: number, receipt: string): Prom
   });
 
   if (!response.ok) {
-    const errorText = await response.text();
+    let errorText;
+    try {
+      const errorJson = await response.json();
+      errorText = errorJson.error || errorJson.details || JSON.stringify(errorJson);
+    } catch {
+      errorText = await response.text();
+    }
     console.error('Razorpay order creation failed:', errorText);
     throw new Error(`Failed to create Razorpay order: ${errorText}`);
   }
@@ -84,6 +90,10 @@ export const verifyPayment = async (paymentData: RazorpayPaymentResponse, orderI
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
   
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error('Supabase configuration missing');
+  }
+  
   const response = await fetch(`${supabaseUrl}/functions/v1/verify-payment`, {
     method: 'POST',
     headers: {
@@ -94,7 +104,13 @@ export const verifyPayment = async (paymentData: RazorpayPaymentResponse, orderI
   });
 
   if (!response.ok) {
-    const errorText = await response.text();
+    let errorText;
+    try {
+      const errorJson = await response.json();
+      errorText = errorJson.error || errorJson.details || JSON.stringify(errorJson);
+    } catch {
+      errorText = await response.text();
+    }
     console.error('Payment verification failed:', errorText);
     throw new Error(`Payment verification failed: ${errorText}`);
   }

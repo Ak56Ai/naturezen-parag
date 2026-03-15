@@ -50,45 +50,72 @@ Deno.serve(async (req) => {
 
     console.log("Signature verified")
 
-    // Initialize Supabase
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    )
+    // Initialize Supabase with service role key
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      throw new Error("Supabase configuration missing")
+    }
 
-    // Update order
+    const supabase = createClient(supabaseUrl, supabaseServiceKey)
+
+    // First, check if the order exists
+    const { data: existingOrder, error: fetchError } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("id", order_id)
+      .single()
+
+    if (fetchError) {
+      console.error("Error fetching order:", fetchError)
+      throw new Error(`Order not found: ${fetchError.message}`)
+    }
+
+    console.log("Found order:", existingOrder)
+
+    // Update order with payment details
     const { data, error } = await supabase
       .from("orders")
       .update({
         status: "PAID",
         payment_id: razorpay_payment_id,
         razorpay_order_id: razorpay_order_id,
-        razorpay_signature: razorpay_signature
+        razorpay_signature: razorpay_signature,
+        updated_at: new Date().toISOString()
       })
       .eq("id", order_id)
       .select()
 
     if (error) {
       console.error("Database update error:", error)
-      throw new Error("Failed to update order status")
+      throw new Error(`Failed to update order status: ${error.message}`)
     }
 
-    console.log("Order updated:", data)
+    console.log("Order updated successfully:", data)
 
-    // Insert payment log (recommended)
-    await supabase.from("payment_logs").insert({
-      order_id: order_id,
-      payment_method: "razorpay",
-      payment_status: "SUCCESS",
-      razorpay_payment_id: razorpay_payment_id,
-      razorpay_order_id: razorpay_order_id,
-      amount: 0
-    })
+    // Insert payment log
+    const { error: logError } = await supabase
+      .from("payment_logs")
+      .insert({
+        order_id: order_id,
+        payment_method: "razorpay",
+        payment_status: "SUCCESS",
+        razorpay_payment_id: razorpay_payment_id,
+        razorpay_order_id: razorpay_order_id,
+        amount: existingOrder.total_amount
+      })
+
+    if (logError) {
+      console.error("Payment log error:", logError)
+      // Don't throw error for logging failure
+    }
 
     return new Response(
       JSON.stringify({
         success: true,
-        message: "Payment verified successfully"
+        message: "Payment verified successfully",
+        order: data[0]
       }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -100,7 +127,10 @@ Deno.serve(async (req) => {
     console.error("Payment verification error:", error)
 
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ 
+        error: error.message,
+        details: error.toString()
+      }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 400
