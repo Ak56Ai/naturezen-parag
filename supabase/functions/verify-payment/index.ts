@@ -11,72 +11,100 @@ Deno.serve(async (req) => {
   }
 
   try {
-    console.log('Verifying payment...');
-    const { razorpay_payment_id, razorpay_order_id, razorpay_signature, order_id } = await req.json()
-    console.log('Payment data:', { razorpay_payment_id, razorpay_order_id, razorpay_signature, order_id });
+    console.log("Verifying payment...")
 
-    const razorpayKeySecret = Deno.env.get('RAZORPAY_KEY_SECRET')
-    
+    const {
+      razorpay_payment_id,
+      razorpay_order_id,
+      razorpay_signature,
+      order_id
+    } = await req.json()
+
+    console.log("Payment data:", {
+      razorpay_payment_id,
+      razorpay_order_id,
+      razorpay_signature,
+      order_id
+    })
+
+    const razorpayKeySecret = Deno.env.get("RAZORPAY_KEY_SECRET")
+
     if (!razorpayKeySecret) {
-      console.error('Razorpay key secret not found');
-      throw new Error('Razorpay key secret not configured')
+      throw new Error("Razorpay key secret not configured")
     }
 
-    // Create signature for verification
-    const crypto = await import('node:crypto');
-    const expectedSignature = crypto
-      .createHmac('sha256', razorpayKeySecret)
-      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
-      .digest('hex')
+    // Verify signature
+    const crypto = await import("node:crypto")
 
-    console.log('Expected signature:', expectedSignature);
-    console.log('Received signature:', razorpay_signature);
+    const expectedSignature = crypto
+      .createHmac("sha256", razorpayKeySecret)
+      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+      .digest("hex")
+
+    console.log("Expected:", expectedSignature)
+    console.log("Received:", razorpay_signature)
 
     if (expectedSignature !== razorpay_signature) {
-      console.error('Signature mismatch');
-      throw new Error('Invalid payment signature')
+      throw new Error("Invalid payment signature")
     }
 
-    console.log('Payment signature verified successfully');
+    console.log("Signature verified")
 
-    // Initialize Supabase client
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const supabase = createClient(supabaseUrl, supabaseServiceKey)
+    // Initialize Supabase
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    )
 
-    // Update order status in database
-    const { error } = await supabase
-      .from('orders')
-      .update({ 
-        status: 'PAID',
+    // Update order
+    const { data, error } = await supabase
+      .from("orders")
+      .update({
+        status: "PAID",
         payment_id: razorpay_payment_id,
         razorpay_order_id: razorpay_order_id,
         razorpay_signature: razorpay_signature
       })
-      .eq('id', order_id)
+      .eq("id", order_id)
+      .select()
 
     if (error) {
-      console.error('Database update error:', error)
-      throw new Error('Failed to update order status')
+      console.error("Database update error:", error)
+      throw new Error("Failed to update order status")
     }
 
-    console.log('Order status updated to PAID');
+    console.log("Order updated:", data)
+
+    // Insert payment log (recommended)
+    await supabase.from("payment_logs").insert({
+      order_id: order_id,
+      payment_method: "razorpay",
+      payment_status: "SUCCESS",
+      razorpay_payment_id: razorpay_payment_id,
+      razorpay_order_id: razorpay_order_id,
+      amount: 0
+    })
 
     return new Response(
-      JSON.stringify({ success: true, message: 'Payment verified successfully' }),
+      JSON.stringify({
+        success: true,
+        message: "Payment verified successfully"
+      }),
       {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      },
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200
+      }
     )
+
   } catch (error) {
-    console.error('Payment verification error:', error)
+    console.error("Payment verification error:", error)
+
     return new Response(
       JSON.stringify({ error: error.message }),
       {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400,
-      },
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 400
+      }
     )
   }
 })

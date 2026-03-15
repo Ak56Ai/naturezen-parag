@@ -28,7 +28,7 @@ const CheckoutPage = () => {
 
   useEffect(() => {
     checkUser();
-  }, [cart, navigate]);
+  }, []);
 
   useEffect(() => {
     // Check if cart is empty after component mounts
@@ -101,6 +101,12 @@ const CheckoutPage = () => {
   };
 
   const createOrder = async () => {
+
+    if (!cart || cart.length === 0) {
+      toast.error("Cart is empty");
+      return null;
+    }
+
     if (!validateForm()) return null;
 
     if (!user?.id) {
@@ -111,46 +117,34 @@ const CheckoutPage = () => {
 
     const orderData = {
       user_id: user.id,
-      total_amount: getTotalPrice() * 1.18,
+      total_amount: finalAmount,
       status: 'PENDING',
       payment_method: paymentMethod,
-      shipping_address: shippingDetails
-    };
 
-    try {
-
-      const { data, error } = await supabase
-        .from('orders')
-        .insert([orderData])
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      console.log("Order created:", data);
-
-      const orderItems = cart.map(item => ({
-        order_id: data.id,
+      order_items: cart.map(item => ({
         product_id: item.product.id,
         product_name: item.product.name,
         quantity: item.quantity,
         price: item.product.price,
         total_price: item.product.price * item.quantity
-      }));
+      })),
 
-      const { error: itemsError } = await supabase
-        .from('order_items')
-        .insert(orderItems);
+      shipping_address: shippingDetails
+    };
 
-      if (itemsError) console.error(itemsError);
+    const { data, error } = await supabase
+      .from('orders')
+      .insert([orderData])
+      .select()
+      .single();
 
-      return data;
-
-    } catch (error) {
+    if (error) {
       console.error(error);
       toast.error('Failed to create order');
       return null;
     }
+
+    return data;
   };
 
   const handleRazorpayPayment = async () => {
@@ -214,13 +208,6 @@ const CheckoutPage = () => {
               }]);
 
             // Update order status
-            await supabase
-              .from('orders')
-              .update({ 
-                status: 'PAID',
-                payment_id: response.razorpay_payment_id 
-              })
-              .eq('id', order.id);
 
             console.log('Order updated to PAID status');
             
@@ -231,6 +218,8 @@ const CheckoutPage = () => {
             console.error('Payment verification failed:', error);
             toast.error('Payment verification failed');
           }
+
+          setLoading(false);
         },
         (error) => {
           console.error('Payment failed:', error);
@@ -245,6 +234,7 @@ const CheckoutPage = () => {
               error_message: error.description || 'Payment failed',
             }]);
           toast.error('Payment failed or cancelled');
+          setLoading(false);
         }
       );
     } catch (error) {
